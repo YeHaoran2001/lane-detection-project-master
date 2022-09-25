@@ -91,14 +91,5 @@ if __name__ == '__main__':
     print(ret)
     cv2.imshow('', ret)
     cv2.waitKey()
-#     src = cv2.imread(fn)
-#     I = src.astype('float64')/255
-#     dark = DarkChannel(I,15)
-#     A = AtmLight(I,dark)
-#     te = TransmissionEstimate(I,A,15)
-#     t = TransmissionRefine(src,te)
-#     J = Recover(I,t,A,0.1)
-#     arr = np.hstack((I, J))
-#     cv2.imshow("contrast", J)
-#     cv2.waitKey()
+
     

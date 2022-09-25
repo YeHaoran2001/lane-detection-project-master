@@ -19,12 +19,17 @@ python run.py --path ./data/image/curve.jpg
 
 检测有阴影的车道线
 ```bash
-python run.py --path ./data/image/shadow.jpg
+python run.py --path ./data/image/shadow.jpg --deshadow
 ```
 
 检测有雾天的车道线
 ```bash
 python run.py --path ./data/image/haze.jpg --dehaze
+```
+
+检测夜间的车道线
+```bash
+python run.py --path ./data/image/night.jpg --illumination
 ```
 
 对视频进行检测

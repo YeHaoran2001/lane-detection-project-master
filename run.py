@@ -3,31 +3,42 @@ import cv2
 import utlis
 import argparse
 from preprocessing.Dehaze import dehaze
+from preprocessing.Deshadow import deshadow
+from preprocessing.Illumination import enhance
 
 def main(opts):
 
-    def pipeline(img_ori):
-        # STEP 1: resize the image
-        img = cv2.resize(img_ori, (frameWidth, frameHeight), None)
+    def pipeline(img):
+        img_original = cv2.resize(img, (frameWidth, frameHeight))
+        # STEP 1: data preprocessing
+        if opts.dehaze:
+            img = dehaze(img)
+        if opts.deshadow:
+            img = deshadow(img)
+        if opts.illumination:
+            img = enhance(img)
+
+        # STEP 2: resize the image
+        img = cv2.resize(img, (frameWidth, frameHeight), None)
         imgWarpPoints = img.copy()
         imgFinal = img.copy()
         imgCanny = img.copy()
 
-        # STEP 2: applying Canny edge detection, dilating erode, thresholding
+        # STEP 3: applying Canny edge detection, dilating erode, thresholding
         imgThres, imgCanny, imgColor, imgErode = utlis.thresholding(img)
 
         src = utlis.valTrackbars()
 
-        # STEP 3: perspective warp
+        # STEP 4: perspective warp
         imgWarp = utlis.perspective_warp(imgThres, dst_size=(frameWidth, frameHeight), src=src)
         imgWarpPoints = utlis.drawPoints(imgWarpPoints, src)
 
-        # STEP 4: detect lanes based on sliding window 
+        # STEP 5: detect lanes based on sliding window 
         imgSliding, curves, lanes, ploty = utlis.sliding_window(imgWarp, draw_windows=True)
         imgFinal = utlis.draw_lanes(img, curves[0], curves[1], frameWidth, frameHeight, src=src)
 
 
-        imgStacked = utlis.stackImages(0.7, ([img,imgWarpPoints,imgCanny],
+        imgStacked = utlis.stackImages(0.7, ([img_original,img,imgWarpPoints],
                                                 [imgErode, imgColor, imgThres],
                                                 [imgWarp,imgSliding,imgFinal],
                                                 ))
@@ -45,9 +56,6 @@ def main(opts):
 
     if not opts.is_video:
         img_ori = cv2.imread(path)
-        if opts.dehaze:
-            img_ori = dehaze(img_ori)
-
         imgStacked, imgFinal = pipeline(img_ori)
         cv2.imshow("PipeLine",imgStacked) 
         cv2.imshow("Result", imgFinal) 
@@ -72,5 +80,7 @@ if __name__ == '__main__':
     parser.add_argument('--frameHeight', type=int, default=320, help='The height to resize the image')
     parser.add_argument('--intialTracbarVals', nargs='+', default=[42,63,13,87] ,type=int)
     parser.add_argument('--dehaze', action='store_true')
+    parser.add_argument('--deshadow', action='store_true')
+    parser.add_argument('--illumination', action='store_true')
     opts = parser.parse_args()
     main(opts)
