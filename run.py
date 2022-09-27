@@ -3,7 +3,7 @@ import cv2
 import utlis
 import argparse
 from preprocessing.Dehaze import dehaze
-from preprocessing.Deshadow import deshadow
+from preprocessing.Deshadow import process_image_file as deshadow
 from preprocessing.Illumination import enhance
 
 def main(opts):
@@ -14,18 +14,17 @@ def main(opts):
         if opts.dehaze:
             img = dehaze(img)
         if opts.deshadow:
-            img = deshadow(img)
+            _, _, img = deshadow(img)
         if opts.illumination:
             img = enhance(img)
-
         # STEP 2: resize the image
         img = cv2.resize(img, (frameWidth, frameHeight), None)
         imgWarpPoints = img.copy()
         imgFinal = img.copy()
         imgCanny = img.copy()
 
-        # STEP 3: applying Canny edge detection, dilating erode, thresholding
-        imgThres, imgCanny, imgColor, imgErode = utlis.thresholding(img)
+        # STEP 3: applying Canny edge detection, dilating, thresholding
+        imgThres, imgCanny, imgColor, imgDilate = utlis.thresholding(img, opts=opts)
 
         src = utlis.valTrackbars()
 
@@ -39,7 +38,7 @@ def main(opts):
 
 
         imgStacked = utlis.stackImages(0.7, ([img_original,img,imgWarpPoints],
-                                                [imgErode, imgColor, imgThres],
+                                                [imgDilate, imgColor, imgThres],
                                                 [imgWarp,imgSliding,imgFinal],
                                                 ))
         return imgStacked, imgFinal
@@ -78,9 +77,10 @@ if __name__ == '__main__':
     parser.add_argument("--is_video", action='store_true', help="Set true to load video")
     parser.add_argument('--frameWidth', type=int, default=480, help='The width to resize the image')
     parser.add_argument('--frameHeight', type=int, default=320, help='The height to resize the image')
-    parser.add_argument('--intialTracbarVals', nargs='+', default=[42,63,13,87] ,type=int)
+    parser.add_argument('--intialTracbarVals', nargs='+', default=[36,63,13,87] ,type=int)
     parser.add_argument('--dehaze', action='store_true')
     parser.add_argument('--deshadow', action='store_true')
     parser.add_argument('--illumination', action='store_true')
+    parser.add_argument('--disable_erode', action='store_true')
     opts = parser.parse_args()
     main(opts)

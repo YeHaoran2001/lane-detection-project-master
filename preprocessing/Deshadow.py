@@ -1,66 +1,250 @@
-import cv2
+from unicodedata import name
+import cv2 as cv
 import numpy as np
-import matplotlib.pyplot as plt
+from skimage import measure
+from matplotlib import pyplot as plt
+
+from typing import Tuple, List
+
+# Applies median filtering over given point
+def median_filter(img: np.ndarray, point: np.ndarray, filter_size: int) -> List:
+    indices = [[x, y]
+               for x in range(point[1] - filter_size // 2, point[1] + filter_size // 2 + 1)
+               for y in range(point[0] - filter_size // 2, point[0] + filter_size // 2 + 1)]
+
+    indices = list(filter(lambda x: not (x[0] < 0 or x[1] < 0 or
+                                         x[0] >= img.shape[0] or
+                                         x[1] >= img.shape[1]), indices))
+
+    pixel_values = [0, 0, 0]
+
+    # Find the median of pixel values
+    for channel in range(3):
+        pixel_values[channel] = list(img[index[0], index[1], channel] for index in indices)
+    pixel_values = list(np.median(pixel_values, axis=1))
+
+    return pixel_values
 
 
-def max_filtering(N, I_temp):
-    wall = np.full((I_temp.shape[0]+(N//2)*2, I_temp.shape[1]+(N//2)*2), -1)
-    wall[(N//2):wall.shape[0]-(N//2), (N//2):wall.shape[1]-(N//2)] = I_temp.copy()
-    temp = np.full((I_temp.shape[0]+(N//2)*2, I_temp.shape[1]+(N//2)*2), -1)
-    for y in range(0,wall.shape[0]):
-        for x in range(0,wall.shape[1]):
-            if wall[y,x]!=-1:
-                window = wall[y-(N//2):y+(N//2)+1,x-(N//2):x+(N//2)+1]
-                num = np.amax(window)
-                temp[y,x] = num
-    A = temp[(N//2):wall.shape[0]-(N//2), (N//2):wall.shape[1]-(N//2)].copy()
-    return A
+# Applies median filtering on given contour pixels, the filter size is adjustable
+def edge_median_filter(img: np.ndarray, contours_list: tuple, filter_size: int = 7) -> np.ndarray:
+    temp_img = np.copy(img)
+
+    for partition in contours_list:
+        for point in partition:
+            temp_img[point[0][1]][point[0][0]] = median_filter(img,
+                                                               point[0],
+                                                               filter_size)
+
+    return cv.cvtColor(temp_img, cv.COLOR_HSV2BGR)
+
+def display_region(org_image: np.ndarray,
+                   shadow_clear_image: np.ndarray,
+                   label: int,
+                   label_region: np.ndarray,
+                   contours: tuple) -> None:
+    # For debugging, cut the current shadow region from the image
+    reverse_mask = cv.cvtColor(cv.bitwise_not(label_region), cv.COLOR_GRAY2BGR)
+    img_w_hole = org_image & reverse_mask
+
+    temp_filter = cv.cvtColor(label_region, cv.COLOR_GRAY2BGR)
+    cv.drawContours(temp_filter, contours, -1, (255, 0, 0), 3)
+
+    fig, axes = plt.subplots(2, 2)
+
+    ax = axes.ravel()
+
+    plt.title(f"Shadow Region {label}")
+
+    ax[0].imshow(cv.cvtColor(org_image, cv.COLOR_BGR2RGB))
+    ax[0].set_title("Original Image")
+
+    ax[1].imshow(cv.cvtColor(temp_filter, cv.COLOR_BGR2RGB))
+    ax[1].set_title("Shadow Region")
+
+    ax[2].imshow(cv.cvtColor(img_w_hole, cv.COLOR_BGR2RGB))
+    ax[2].set_title("Shadow Region Cut")
+
+    ax[3].imshow(cv.cvtColor(shadow_clear_image, cv.COLOR_BGR2RGB))
+    ax[3].set_title("Corrected Image")
+
+    plt.tight_layout()
+    plt.show()
 
 
-def min_filtering(N, A):
-    wall_min = np.full((A.shape[0]+(N//2)*2, A.shape[1]+(N//2)*2), 300)
-    wall_min[(N//2):wall_min.shape[0]-(N//2), (N//2):wall_min.shape[1]-(N//2)] = A.copy()
-    temp_min = np.full((A.shape[0]+(N//2)*2, A.shape[1]+(N//2)*2), 300)
-    for y in range(0,wall_min.shape[0]):
-        for x in range(0,wall_min.shape[1]):
-            if wall_min[y,x]!=300:
-                window_min = wall_min[y-(N//2):y+(N//2)+1,x-(N//2):x+(N//2)+1]
-                num_min = np.amin(window_min)
-                temp_min[y,x] = num_min
-    B = temp_min[(N//2):wall_min.shape[0]-(N//2), (N//2):wall_min.shape[1]-(N//2)].copy()
-    return B
+def correct_region_lab(org_img: np.ndarray,
+                       shadow_clear_img: np.ndarray,
+                       shadow_indices: np.ndarray,
+                       non_shadow_indices: np.ndarray) -> np.ndarray:
+    # Q: Rather than asking for RGB constants individually, why not adjust L only?
+    # A: L component isn't enough to REVIVE the colors that were under the shadow.
+
+    # Calculate average LAB values in current shadow region and non-shadow areas
+    shadow_average_lab = np.mean(org_img[shadow_indices[0], shadow_indices[1], :], axis=0)
+
+    # Get the average LAB from border areas
+    border_average_lab = np.mean(org_img[non_shadow_indices[0], non_shadow_indices[1], :],
+                                 axis=0)
+
+    # Calculate ratios that are going to be used on clearing the current shadow region
+    # This is different for each region, therefore calculated each time
+    lab_ratio = border_average_lab / shadow_average_lab
+
+    shadow_clear_img = cv.cvtColor(shadow_clear_img, cv.COLOR_BGR2LAB)
+    shadow_clear_img[shadow_indices[0], shadow_indices[1]] = np.uint8(
+        shadow_clear_img[shadow_indices[0],
+                         shadow_indices[1]] * lab_ratio)
+    shadow_clear_img = cv.cvtColor(shadow_clear_img, cv.COLOR_LAB2BGR)
+
+    return shadow_clear_img
 
 
-#B is the filtered image and I is the original image
-def background_subtraction(I, B):
-    O = I - B
-    norm_img = cv2.normalize(O, None, 0,255, norm_type=cv2.NORM_MINMAX)
-    return norm_img
+def correct_region_bgr(org_img: np.ndarray,
+                       shadow_clear_img: np.ndarray,
+                       shadow_indices: np.ndarray,
+                       non_shadow_indices: np.ndarray) -> np.ndarray:
+    # Calculate average BGR values in current shadow region and non-shadow areas
+    shadow_average_bgr = np.mean(org_img[shadow_indices[0], shadow_indices[1], :], axis=0)
 
-def min_max_filtering(M, N, I):
-    if M == 0:
-        #max_filtering
-        A = max_filtering(N, I)
-        #min_filtering
-        B = min_filtering(N, A)
-        #subtraction
-        normalised_img = background_subtraction(I, B)
-    elif M == 1:
-        #min_filtering
-        A = min_filtering(N, I)
-        #max_filtering
-        B = max_filtering(N, A)
-        #subtraction
-        normalised_img = background_subtraction(I, B)
-    return normalised_img
+    # Get the average BGR from border areas
+    border_average_bgr = np.mean(org_img[non_shadow_indices[0], non_shadow_indices[1], :], axis=0)
+    bgr_ratio = border_average_bgr / shadow_average_bgr
 
-def deshadow(P):
-    b, g, r = cv2.split(P)
-    b_O_P = min_max_filtering(M=1, N=20, I=b)
-    g_O_P = min_max_filtering(M=1, N=20, I=g)
-    r_O_P = min_max_filtering(M=1, N=20, I=r)
+    # Adjust BGR
+    shadow_clear_img[shadow_indices[0], shadow_indices[1]] = np.uint8(
+        shadow_clear_img[shadow_indices[0],
+                         shadow_indices[1]] * bgr_ratio)
 
-    O_P = cv2.merge([b_O_P, g_O_P, r_O_P])
-    # O_P = min_max_filtering(M=0, N=3, I=P)
-    O_P = O_P.astype('uint8')
-    return O_P
+    return shadow_clear_img
+
+
+def process_regions(org_image: np.ndarray,
+                    mask: np.ndarray,
+                    lab_adjustment: bool,
+                    shadow_dilation_kernel_size: int,
+                    shadow_dilation_iteration: int,
+                    shadow_size_threshold: int,
+                    verbose: bool) -> np.ndarray:
+    lab_img = cv.cvtColor(org_image, cv.COLOR_BGR2LAB)
+    shadow_clear_img = np.copy(org_image)  # Used for constructing corrected image
+
+    # We need connected components
+    # Initialize the labels of the blobs in our binary image
+    labels = measure.label(mask)
+
+    non_shadow_kernel_size = (shadow_dilation_kernel_size, shadow_dilation_kernel_size)
+    non_shadow_kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, non_shadow_kernel_size)
+
+    CHANNEL_MAX = 255
+
+    # Now, we will iterate over each label's pixels
+    for label in np.unique(labels):
+        if not label == 0:
+            temp_filter = np.zeros(mask.shape, dtype="uint8")
+            temp_filter[labels == label] = CHANNEL_MAX
+
+            # Only consider blobs with size above threshold
+            if cv.countNonZero(temp_filter) >= shadow_size_threshold:
+                shadow_indices = np.where(temp_filter == CHANNEL_MAX)
+
+                non_shadow_temp_filter = cv.dilate(temp_filter, non_shadow_kernel,
+                                                   iterations=shadow_dilation_iteration)
+
+                # Get the new set of indices and remove shadow indices from them
+                non_shadow_temp_filter = cv.bitwise_xor(non_shadow_temp_filter, temp_filter)
+                non_shadow_indices = np.where(non_shadow_temp_filter == CHANNEL_MAX)
+
+                # Contours are used for extracting the edges of the current shadow region
+                contours, hierarchy = cv.findContours(temp_filter, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)
+
+                if lab_adjustment:
+                    shadow_clear_img = correct_region_lab(lab_img, shadow_clear_img,
+                                                          shadow_indices, non_shadow_indices)
+                else:
+                    shadow_clear_img = correct_region_bgr(org_image, shadow_clear_img,
+                                                          shadow_indices, non_shadow_indices)
+
+                # Then apply median filtering over edges to smooth them
+                # At least on the images I tried, this doesn't work as intended.
+                # It is possible that this is the result of using a high frequency image only
+
+                # Image is converted to HSV before filtering, as BGR components of the image
+                # is more interconnected, therefore filtering each channel independently wouldn't be correct
+                shadow_clear_img = edge_median_filter(cv.cvtColor(shadow_clear_img, cv.COLOR_BGR2HSV),
+                                                      contours)
+                if verbose:
+                    display_region(org_image, shadow_clear_img, label, temp_filter, contours)
+
+    return shadow_clear_img
+
+def calculate_mask(org_image: np.ndarray,
+                   region_adjustment_kernel_size: int) -> np.ndarray:
+    lab_img = cv.cvtColor(org_image, cv.COLOR_BGR2LAB)
+
+    # Calculate the mean values of A and B across all pixels
+    means = [np.mean(lab_img[:, :, i]) for i in range(3)]
+    thresholds = [means[i] - (np.std(lab_img[:, :, i]) / 3) for i in range(3)]
+
+    # If mean is below 256 (which is I think the max value for a channel)
+    channel_max = 256
+
+    # Apply threshold using only L
+    if sum(means[1:]) <= channel_max:
+        mask = cv.inRange(lab_img, (0, 0, 0), (thresholds[0], channel_max, channel_max))
+    else:  # Else, also consider B channel
+        mask = cv.inRange(lab_img, (0, 0, 0), (thresholds[0], channel_max, thresholds[2]))
+
+    kernel_size = (region_adjustment_kernel_size, region_adjustment_kernel_size)
+    kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, kernel_size)
+    cv.morphologyEx(mask, cv.MORPH_CLOSE, kernel, mask)
+    cv.morphologyEx(mask, cv.MORPH_OPEN, kernel, mask)
+
+    return mask
+
+def remove_shadows(org_image: np.ndarray,
+                   lab_adjustment: bool,
+                   region_adjustment_kernel_size: int,
+                   shadow_dilation_iteration: int,
+                   shadow_dilation_kernel_size: int,
+                   shadow_size_threshold: int,
+                   verbose: bool) -> Tuple[np.ndarray, np.ndarray]:
+    mask = calculate_mask(org_image, region_adjustment_kernel_size)
+
+    shadow_clear_img = process_regions(org_image,
+                                       mask,
+                                       lab_adjustment,
+                                       shadow_dilation_kernel_size,
+                                       shadow_dilation_iteration,
+                                       shadow_size_threshold,
+                                       verbose)
+
+    mask = cv.cvtColor(mask, cv.COLOR_GRAY2RGB)
+
+    return shadow_clear_img, mask
+
+def process_image_file(img,
+                       save=False,
+                       lab_adjustment=False,
+                       region_adjustment_kernel_size=10,
+                       shadow_dilation_kernel_size=5,
+                       shadow_dilation_iteration=3,
+                       shadow_size_threshold=2500,
+                       verbose=False) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    org_image = img
+    # print("Read the image {}".format(img_name))
+
+    shadow_clear, mask = remove_shadows(org_image,
+                                        lab_adjustment,
+                                        region_adjustment_kernel_size,
+                                        shadow_dilation_iteration,
+                                        shadow_dilation_kernel_size,
+                                        shadow_size_threshold,
+                                        verbose=verbose)
+
+
+    return org_image, mask, shadow_clear
+
+if __name__ == '__main__':
+    image_path = './data/image/shadow.jpg'
+    img = cv.imread(image_path)
+    org_image, mask, image_clear = process_image_file(img, save=False, verbose=False)

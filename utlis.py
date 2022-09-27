@@ -14,19 +14,20 @@ def colorFilter(img):
     combinedImage = cv2.bitwise_or(maskedWhite,maskedYellow)
     return combinedImage 
 
-def thresholding(img):
+def thresholding(img, opts):
 	# applying Canny edge detection along with dilating erode
     imgGray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     kernel = np.ones((5,5))
     imgBlur = cv2.GaussianBlur(imgGray, (5, 5), 0)
     imgCanny = cv2.Canny(imgBlur, 50, 100)
     imgDial = cv2.dilate(imgCanny,kernel,iterations=1)
-    imgErode = cv2.erode(imgDial,kernel,iterations=1)
-
+    # imgErode = cv2.erode(imgCanny,kernel,iterations=1)
     imgColor = colorFilter(img)
-    combinedImage = cv2.bitwise_or(imgColor, imgErode)
+    combinedImage = cv2.bitwise_or(imgColor, imgDial)
+    if opts.disable_erode:
+        return imgColor,imgCanny,imgColor,imgDial
     #combing colorfilter image and edge image
-    return combinedImage,imgCanny,imgColor,imgErode
+    return combinedImage,imgCanny,imgColor,imgDial
 
 def initializeTrackbars(intialTracbarVals):
 	#intializing trackbars for region of intrest
