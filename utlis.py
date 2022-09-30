@@ -21,7 +21,6 @@ def thresholding(img, opts):
     imgBlur = cv2.GaussianBlur(imgGray, (5, 5), 0)
     imgCanny = cv2.Canny(imgBlur, 50, 100)
     imgDial = cv2.dilate(imgCanny,kernel,iterations=1)
-    # imgErode = cv2.erode(imgCanny,kernel,iterations=1)
     imgColor = colorFilter(img)
     combinedImage = cv2.bitwise_or(imgColor, imgDial)
     if opts.disable_erode:
@@ -30,16 +29,16 @@ def thresholding(img, opts):
     return combinedImage,imgCanny,imgColor,imgDial
 
 def initializeTrackbars(intialTracbarVals):
-	#intializing trackbars for region of intrest
+	# intializing trackbars for region of intrest
     cv2.namedWindow("Trackbars")
     cv2.resizeWindow("Trackbars", 360, 240)
-    cv2.createTrackbar("Width Top", "Trackbars", intialTracbarVals[0],50, lambda x: None)
+    cv2.createTrackbar("Width Top", "Trackbars", intialTracbarVals[0], 50, lambda x: None)
     cv2.createTrackbar("Height Top", "Trackbars", intialTracbarVals[1], 100, lambda x: None)
     cv2.createTrackbar("Width Bottom", "Trackbars", intialTracbarVals[2], 50, lambda x: None)
     cv2.createTrackbar("Height Bottom", "Trackbars", intialTracbarVals[3], 100, lambda x: None)
 
 def valTrackbars():
-	#getting the values of ROI
+	# getting the values of ROI
     widthTop = cv2.getTrackbarPos("Width Top", "Trackbars")
     heightTop = cv2.getTrackbarPos("Height Top", "Trackbars")
     widthBottom = cv2.getTrackbarPos("Width Bottom", "Trackbars")
@@ -80,17 +79,15 @@ def inv_perspective_warp(img,
                      dst=np.float32([(0.43,0.65),(0.58,0.65),(0.1,1),(1,1)])):
     img_size = np.float32([(img.shape[1],img.shape[0])])
     src = src* img_size
-    # For destination points, I'm arbitrarily choosing some points to be
-    # a nice fit for displaying our warped result
-    # again, not exact, but close enough for our purposes
     dst = dst * np.float32(dst_size)
-    # Given src and dst points, calculate the perspective transform matrix
     M = cv2.getPerspectiveTransform(src, dst)
-    # Warp the image using OpenCV warpPerspective()
     warped = cv2.warpPerspective(img, M, dst_size)
     return warped
 
 def get_hist(img):
+    '''
+    hist for the below half
+    '''
     hist = np.sum(img[img.shape[0]//2:,:], axis=0)
     return hist
 
@@ -197,12 +194,12 @@ def sliding_window(img, nwindows=15, margin=50, minpix=1, draw_windows=True):
         return img,(0,0),(0,0),0
 
 
-def draw_lanes(img, left_fit, right_fit,frameWidth,frameHeight,src):
+def draw_lanes(img, left_fit, right_fit, frameWidth, frameHeight, src):
     ploty = np.linspace(0, img.shape[0] - 1, img.shape[0])
     color_img = np.zeros_like(img)
 
     left = np.array([np.transpose(np.vstack([left_fit, ploty]))])
-    right = np.array([np.flipud(np.transpose(np.vstack([right_fit, ploty])))])
+    right = np.array([np.flipud(np.transpose(np.vstack([right_fit, ploty])))]) # flipud up-down
     points = np.hstack((left, right))
 
     cv2.fillPoly(color_img, np.int_(points), (0, 200, 255))
@@ -211,6 +208,11 @@ def draw_lanes(img, left_fit, right_fit,frameWidth,frameHeight,src):
     return inv_perspective
 
 def stackImages(scale,imgArray):
+    '''
+    To stack images for the visualization of pipeline
+    Args:
+        scale: scale of a single image
+    '''
     rows = len(imgArray)
     cols = len(imgArray[0])
     rowsAvailable = isinstance(imgArray[0], list)
