@@ -1,7 +1,5 @@
 # A Toy Lane Detection Project with Opencv-python
 
-### Haoran Ye
-### Soochow University  
 <br>
 
 
